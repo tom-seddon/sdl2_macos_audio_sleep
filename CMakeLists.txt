@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20...3.31)
+project(sdl2_macos_audio_sleep)
+option(SDL_SHARED "" OFF)
+option(SDL_STATIC "" ON)
+add_subdirectory(SDL)
+add_executable(sdl2_macos_audio_sleep src/sdl2_macos_audio_sleep.cpp)
+target_link_libraries(sdl2_macos_audio_sleep SDL2::SDL2-static)
