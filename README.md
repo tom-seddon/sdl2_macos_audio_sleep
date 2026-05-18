@@ -50,17 +50,14 @@ the end of the WAV data is reached, it loops back to the start. (It's
 not very complicated! See the code.)
 
 The sleep/wake-related behaviour is edited by modifying the source.
-The thing to tweak is `g_behaviour`, near the top:
-
-- `Behaviour_None`: nothing done on sleep or wake
-- `Behaviour_ReopenAudioDevice`: nothing done on sleep; on wake, close
-  the audio device and re-open it
-- `Behaviour_PauseDevice`: on sleep, pause audio device; on wake,
-  unpause audio device
+The thing to tweak is `g_behaviour`, near the top - see the enum for a
+description of each option.
 
 To stop it, quit it.
 
 To see the issue:
+
+0. run the program (should hear something)
 
 1. sleep the Mac with `Apple` > `Sleep`
 
@@ -79,15 +76,16 @@ Macbook Pro mid-2015 13", macOS Ventura 13.7.8:
   called much more often than expected, and no audio output, for a
   period that seems to relate to the sleep period - then eventually
   normal behaviour resumes
-- `Behaviour_PauseDevice`: not obviously different from `BehaviourNone`
+- `Behaviour_PauseOnSleepUnpauseOnWake`: not obviously different from `BehaviourNone`
+- `Behaviour_PauseThenUnpauseOnWake`: not obviously different from `BehaviourNone`
 - `Behaviour_ReopenAudioDevice`: playback stops on sleep. On wake,
   playback resumes immediately when the device is re-opened (even
   behind the lock screen)
 
 Mac Studio M4 Max, macOS Sequoia 15.7.5:
 
-playback stops on sleep. On wake, playback resumes
-shortly (even behind the lock screen).
+Playback stops on sleep. On wake, playback resumes shortly (even
+behind the lock screen).
 
 # Other notes
 

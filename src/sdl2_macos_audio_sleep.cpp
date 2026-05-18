@@ -19,14 +19,17 @@ enum Behaviour {
     // Do nothing on wake/sleep.
     Behaviour_None,
 
-    // Pause audio device on sleep, unpause on wake.
-    Behaviour_PauseDevice,
+    // Pause audio device on sleep; pause/unpause on wake.
+    Behaviour_PauseOnSleepUnpauseOnWake,
+    
+    // Do nothing on sleep; pause/unpause on wake.
+    Behaviour_PauseThenUnpauseOnWake,
 
-    // Reopen audio device on wake.
-    Behaviour_ReopenAudioDevice,
+    // Do nothing on sleep; reopen audio device on wake.
+    Behaviour_ReopenOnWake,
 };
 
-static constexpr Behaviour g_behaviour = Behaviour_None;
+static constexpr Behaviour g_behaviour = Behaviour_PauseThenUnpauseOnWake;
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -68,29 +71,35 @@ double GetSecondsFromTicks(uint64_t ticks) {
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
+static SDL_threadID g_main_thread_id;
 static UInt32 g_power_on_event;
 static SDL_AudioDeviceID g_audio_device_id = 0;
 
 static void SleepCallback(void *refCon, io_service_t service, natural_t message, void *message_arg) {
+    assert(SDL_ThreadID()==g_main_thread_id);
     (void)refCon, (void)service, (void)message_arg;
 
     if (message == kIOMessageSystemWillSleep) {
         printf("SleepCallback: kIOMessageSystemWillSleep (now=%.4f s)\n", GetSecondsFromTicks(GetCurrentTickCount()));
 
-        if (g_behaviour == Behaviour_PauseDevice) {
-            printf("Behaviour_PauseDevice: pausing device\n");
+        if (g_behaviour == Behaviour_PauseOnSleepUnpauseOnWake) {
+            printf("Behaviour_PauseOnSleepUnpauseOnWake: pausing device\n");
             SDL_PauseAudioDevice(g_audio_device_id, 1);
         }
     } else if (message == kIOMessageSystemHasPoweredOn) {
         printf("SleepCallback: kIOMessageSystemHasPoweredOn (now=%.4f s)\n", GetSecondsFromTicks(GetCurrentTickCount()));
 
-        if (g_behaviour == Behaviour_ReopenAudioDevice) {
+        if (g_behaviour == Behaviour_ReopenOnWake) {
             SDL_Event event;
             event.type = g_power_on_event;
 
             SDL_PushEvent(&event);
-        } else if (g_behaviour == Behaviour_PauseDevice) {
-            printf("Behaviour_PauseDevice: unpausing device\n");
+        } else if (g_behaviour == Behaviour_PauseOnSleepUnpauseOnWake) {
+            printf("Behaviour_PauseOnSleepUnpauseOnWake: unpausing device\n");
+            SDL_PauseAudioDevice(g_audio_device_id, 0);
+        }else if(g_behaviour==Behaviour_PauseThenUnpauseOnWake){
+            printf("Behaviour_PauseThenUnpauseOnWake: pausing/unpausing device\n");
+            SDL_PauseAudioDevice(g_audio_device_id, 1);
             SDL_PauseAudioDevice(g_audio_device_id, 0);
         }
     }
@@ -211,6 +220,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "FATAL: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
+    
+    g_main_thread_id=SDL_ThreadID();
 
     g_power_on_event = SDL_RegisterEvents(1);
 
