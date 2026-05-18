@@ -16,8 +16,8 @@ Prerequisites:
 To set up, do this from the root of the working copy:
 
 	rm -R build
-	cmake -G Xcode -B build
-	
+	cmake -G Xcode -B build -DCMAKE_OSX_DEPLOYMENT_TARGET=`sw_vers -productVersion`
+
 Load `build/sdl2_macos_audio_sleep.xcodeproj` into Xcode.
 
 Set `sdl2_macos_audio_sleep` as the scheme.
@@ -73,12 +73,7 @@ it wakes up the program carries on where it left off.
 
 Actual results:
 
-On Mac Studio, behaves as expected. (Tested on M4 Max.)
-
-On Macbook Pro, behaviour depends on `g_behaviour`. (Tested on mid
-2015 13" Macbook Pro running Ventura 13.7.8 with OCLP. I was moved to
-look into this after getting related reports from Intel and Apple
-Silicon laptop users, various models, both with and without OCLP.)
+Macbook Pro mid-2015 13", macOS Ventura 13.7.8:
 
 - `Behaviour_None`: playbacks stops on sleep. On wake, the callback is
   called much more often than expected, and no audio output, for a
@@ -86,7 +81,13 @@ Silicon laptop users, various models, both with and without OCLP.)
   normal behaviour resumes
 - `Behaviour_PauseDevice`: not obviously different from `BehaviourNone`
 - `Behaviour_ReopenAudioDevice`: playback stops on sleep. On wake,
-  playback resumes immediately
+  playback resumes immediately when the device is re-opened (even
+  behind the lock screen)
+
+Mac Studio M4 Max, macOS Sequoia 15.7.5:
+
+playback stops on sleep. On wake, playback resumes
+shortly (even behind the lock screen).
 
 # Other notes
 
