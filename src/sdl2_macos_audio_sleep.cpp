@@ -18,15 +18,15 @@
 enum Behaviour {
     // Do nothing on wake/sleep.
     Behaviour_None,
-    
+
     // Pause audio device on sleep, unpause on wake.
     Behaviour_PauseDevice,
-    
+
     // Reopen audio device on wake.
     Behaviour_ReopenAudioDevice,
 };
 
-static constexpr Behaviour g_behaviour=Behaviour_PauseDevice;
+static constexpr Behaviour g_behaviour = Behaviour_None;
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -77,21 +77,21 @@ static void SleepCallback(void *refCon, io_service_t service, natural_t message,
     if (message == kIOMessageSystemWillSleep) {
         printf("SleepCallback: kIOMessageSystemWillSleep (now=%.4f s)\n", GetSecondsFromTicks(GetCurrentTickCount()));
 
-        if(g_behaviour==Behaviour_PauseDevice){
+        if (g_behaviour == Behaviour_PauseDevice) {
             printf("Behaviour_PauseDevice: pausing device\n");
             SDL_PauseAudioDevice(g_audio_device_id, 1);
         }
     } else if (message == kIOMessageSystemHasPoweredOn) {
         printf("SleepCallback: kIOMessageSystemHasPoweredOn (now=%.4f s)\n", GetSecondsFromTicks(GetCurrentTickCount()));
-        
-        if(g_behaviour==Behaviour_ReopenAudioDevice){
+
+        if (g_behaviour == Behaviour_ReopenAudioDevice) {
             SDL_Event event;
             event.type = g_power_on_event;
-            
+
             SDL_PushEvent(&event);
-        }else if(g_behaviour==Behaviour_PauseDevice){
+        } else if (g_behaviour == Behaviour_PauseDevice) {
             printf("Behaviour_PauseDevice: unpausing device\n");
-            SDL_PauseAudioDevice(g_audio_device_id,0);
+            SDL_PauseAudioDevice(g_audio_device_id, 0);
         }
     }
 }
@@ -102,8 +102,8 @@ static io_object_t g_notifier;
 
 static void AddSleepCallback() {
     g_root_port = IORegisterForSystemPower(nullptr, &g_notify_port_ref, &SleepCallback, &g_notifier);
-    if(g_root_port==0){
-        fprintf(stderr,"FATAL: IORegisterForSystemPower failed\n");
+    if (g_root_port == 0) {
+        fprintf(stderr, "FATAL: IORegisterForSystemPower failed\n");
         exit(1);
     }
 
@@ -123,9 +123,9 @@ static void RemoveSleepCallback() {
     IONotificationPortDestroy(g_notify_port_ref), g_notify_port_ref = nullptr;
 }
 
-static Uint16*g_wav_buf;
+static Uint16 *g_wav_buf;
 static Uint32 g_wav_len;
-static Uint32 g_wav_index=0;
+static Uint32 g_wav_index = 0;
 
 struct AudioCallbackState {
     uint64_t last_callback_ticks = 0;
@@ -142,14 +142,14 @@ static void SDLCALL AudioCallback(void *userdata, Uint8 *stream_, int len) {
 
     s->last_callback_ticks = now_ticks;
     ++s->num_calls;
-    
-    assert(len%2==0);
-    auto stream=(Uint16*)stream_;
-    for(int i=0;i<len/2;++i){
-        stream[i]=g_wav_buf[g_wav_index];
-        
+
+    assert(len % 2 == 0);
+    auto stream = (Uint16 *)stream_;
+    for (int i = 0; i < len / 2; ++i) {
+        stream[i] = g_wav_buf[g_wav_index];
+
         ++g_wav_index;
-        g_wav_index%=g_wav_len;
+        g_wav_index %= g_wav_len;
     }
 }
 
@@ -190,9 +190,9 @@ static void ReopenAudioDevice() {
                                             0);
 
     printf("device_id=%d\n", g_audio_device_id);
-    
-    if(g_audio_device_id==0){
-        fprintf(stderr,"FATAL: SDL_OpenAudioDevice failed: %s\n",SDL_GetError());
+
+    if (g_audio_device_id == 0) {
+        fprintf(stderr, "FATAL: SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
         exit(1);
     }
 
@@ -207,36 +207,36 @@ static void ReopenAudioDevice() {
 int main(int argc, char *argv[]) {
     (void)argc, (void)argv;
 
-    if(SDL_Init(SDL_INIT_EVENTS | SDL_INIT_AUDIO)!=0){
-        fprintf(stderr,"FATAL: SDL_Init failed: %s\n",SDL_GetError());
+    if (SDL_Init(SDL_INIT_EVENTS | SDL_INIT_AUDIO) != 0) {
+        fprintf(stderr, "FATAL: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
 
     g_power_on_event = SDL_RegisterEvents(1);
-    
-    std::string wav_path=ASSETS_DIR;
-    if(!wav_path.empty()){
-        if(wav_path.back()!='/'){
-            wav_path+="/";
+
+    std::string wav_path = ASSETS_DIR;
+    if (!wav_path.empty()) {
+        if (wav_path.back() != '/') {
+            wav_path += "/";
         }
     }
-    
-    wav_path+="cusb_ed_80073_01_1252_0ad.wav";
-    
+
+    wav_path += "cusb_ed_80073_01_1252_0ad.wav";
+
     SDL_AudioSpec wav_spec;
-    Uint8*wav_buf;
+    Uint8 *wav_buf;
     Uint32 wav_len;
-    if(!SDL_LoadWAV(wav_path.c_str(),&wav_spec,&wav_buf,&wav_len)){
-        fprintf(stderr,"FATAL: failed to load \"%s\": %s\n",wav_path.c_str(),SDL_GetError());
+    if (!SDL_LoadWAV(wav_path.c_str(), &wav_spec, &wav_buf, &wav_len)) {
+        fprintf(stderr, "FATAL: failed to load \"%s\": %s\n", wav_path.c_str(), SDL_GetError());
         return 1;
     }
-    assert(wav_len%2==0);
-    g_wav_buf=(Uint16*)wav_buf;
-    g_wav_len=wav_len/2;
-    
+    assert(wav_len % 2 == 0);
+    g_wav_buf = (Uint16 *)wav_buf;
+    g_wav_len = wav_len / 2;
+
     SDL_Window *w = SDL_CreateWindow("audio test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 250, 250, 0);
-    if(!w){
-        fprintf(stderr,"FATAL: SDL_CreateWindow failed: %s\n",SDL_GetError());
+    if (!w) {
+        fprintf(stderr, "FATAL: SDL_CreateWindow failed: %s\n", SDL_GetError());
         return 1;
     }
 
@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
     }
 
 done:
-    
+
     RemoveSleepCallback();
 
     CloseAudioDevice();
