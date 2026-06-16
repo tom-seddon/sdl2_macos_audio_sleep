@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string>
+#include <mutex>
+#include <thread>
 
 // https://developer.apple.com/library/archive/qa/qa1340/_index.html
 
@@ -30,6 +32,16 @@ enum Behaviour {
 };
 
 static constexpr Behaviour g_behaviour = Behaviour_PauseThenUnpauseOnWake;
+
+static constexpr bool g_use_callback=false;
+
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+// wav file must be 16 bit
+static const char wav_name[]="cusb_ed_80073_01_1252_0ad.wav";
+static constexpr int wav_freq=48000;
+static constexpr int wav_channels=2;
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -74,6 +86,7 @@ double GetSecondsFromTicks(uint64_t ticks) {
 static SDL_threadID g_main_thread_id;
 static UInt32 g_power_on_event;
 static SDL_AudioDeviceID g_audio_device_id = 0;
+static std::mutex g_audio_device_id_mutex;
 
 static void SleepCallback(void *refCon, io_service_t service, natural_t message, void *message_arg) {
     assert(SDL_ThreadID()==g_main_thread_id);
@@ -162,8 +175,38 @@ static void SDLCALL AudioCallback(void *userdata, Uint8 *stream_, int len) {
     }
 }
 
+static std::atomic<bool> g_stop_audio_thread{false};
+
+// size in samples of approx 100 ms of audio
+static constexpr size_t CHUNK_SIZE_SAMPLES=wav_channels*wav_freq/10;
+
+static void AudioThread(){
+    while(!g_stop_audio_thread.load(std::memory_order_acquire)){
+        {
+            std::lock_guard<std::mutex> lock(g_audio_device_id_mutex);
+            
+            if(g_audio_device_id!=0){
+                if(SDL_GetQueuedAudioSize(g_audio_device_id)<2*CHUNK_SIZE_SAMPLES){
+                    uint16_t buffer[CHUNK_SIZE_SAMPLES];
+                    for(size_t i=0;i<CHUNK_SIZE_SAMPLES;++i){
+                        buffer[i]=g_wav_buf[g_wav_index];
+                        
+                        ++g_wav_index;
+                        g_wav_index%=g_wav_len;
+                    }
+                    
+                    SDL_QueueAudio(g_audio_device_id,buffer,sizeof buffer);
+                }
+            }
+        }
+        
+        SDL_Delay(50);
+    }
+}
+
 static AudioCallbackState g_audio_callback_state;
 
+// doesn't lock the mutex.
 static void CloseAudioDevice() {
     if (g_audio_device_id != 0) {
         printf("closing audio device: %" PRIu32 "\n", g_audio_device_id);
@@ -175,6 +218,8 @@ static void CloseAudioDevice() {
 
 static void ReopenAudioDevice() {
     printf("ReopenAudioDevice...\n");
+    
+    std::lock_guard<std::mutex> lock(g_audio_device_id_mutex);
 
     if (g_audio_device_id != 0) {
         CloseAudioDevice();
@@ -184,11 +229,13 @@ static void ReopenAudioDevice() {
 
     // format chosen to match the WAV file
     SDL_AudioSpec desired_spec = {};
-    desired_spec.freq = 48000;
+    desired_spec.freq = wav_freq;
     desired_spec.format = AUDIO_S16SYS;
     desired_spec.samples = 1024;
-    desired_spec.callback = &AudioCallback;
-    desired_spec.userdata = &g_audio_callback_state;
+    if(g_use_callback){
+        desired_spec.callback = &AudioCallback;
+        desired_spec.userdata = &g_audio_callback_state;
+    }
 
     SDL_AudioSpec obtained_spec = {};
 
@@ -232,7 +279,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    wav_path += "cusb_ed_80073_01_1252_0ad.wav";
+    wav_path += wav_name;
 
     SDL_AudioSpec wav_spec;
     Uint8 *wav_buf;
@@ -241,6 +288,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "FATAL: failed to load \"%s\": %s\n", wav_path.c_str(), SDL_GetError());
         return 1;
     }
+    assert(SDL_AUDIO_BITSIZE(wav_spec.format)==16);
+    assert(wav_spec.freq==wav_freq);
     assert(wav_len % 2 == 0);
     g_wav_buf = (Uint16 *)wav_buf;
     g_wav_len = wav_len / 2;
@@ -260,6 +309,11 @@ int main(int argc, char *argv[]) {
     AddSleepCallback();
 
     ReopenAudioDevice();
+    
+    std::thread audio_thread;
+    if(!g_use_callback){
+        audio_thread=std::thread(&AudioThread);
+    }
 
     SDL_Event ev;
     while (SDL_WaitEvent(&ev)) {
@@ -276,9 +330,14 @@ int main(int argc, char *argv[]) {
     }
 
 done:
-
     RemoveSleepCallback();
-
+    
+    if(audio_thread.joinable()){
+        g_stop_audio_thread.store(true,std::memory_order_release);
+        audio_thread.join();
+    }
+    
+    // safe to call, as the audio thread (if any) is gone.
     CloseAudioDevice();
 
     SDL_Quit();
